@@ -1,59 +1,100 @@
-const TelegarmApi = require('node-telegram-bot-api')
-const {gameOptions,againOptions}=require('./options')
+//https://www.cbr-xml-daily.ru/daily_json.js
+
+const TelegramApi = require('node-telegram-bot-api')
+const {valueOptions,againOptions}=require('./options')
+const axios = require("axios");
 const token ='5355793921:AAGVsXEBwOHtgkgs-7XQAnX5fDCY4KKFWYg'
-
-const  bot = new TelegarmApi(token,{polling:true})
-
+const  bot = new TelegramApi(token,{polling:true})
 const chats={}
+let currency = {}
 
-
-const startGame = async (chatId)=>{
-    await bot.sendMessage(chatId, 'Давай сыграем! Отгадай число от 0 до 9');
-    const randomNumber = Math.floor(Math.random()*10);
-    chats[chatId]=randomNumber;
-    await bot.sendMessage(chatId,'от 0 до 9',gameOptions);
+function output(chatId,data){
+    bot.sendMessage(chatId,`ID ${data.ID}\n
+     Номерной код ${data.NumCode}\n
+     Аббревиатура ${data.CharCode}\n
+     Номинал ${data.Nominal}\n
+     Название ${data.Name}\n
+     Стоимоcть ${data.Value}\n
+     Предыдущая стоимость ${data.Previous}`);
+}
+function getValue(data){
+    return data.Value;
+}
+function getNominal(data){
+    return data.Nominal;
+}
+function getName(data){
+    return data.Name;
 }
 
+const startGame = async (chatId)=>{
+    await bot.sendMessage(chatId,'Валюты',valueOptions);
+}
 const start=()=>{
     bot.setMyCommands([
         {command: '/start', description: 'Начальное приветствие'},
         {command: '/info',description: 'Информация о боте'},
-        {command: '/slava_ukraine', description: 'Не надо нажимать'},
-        {command: '/game',description: 'отгадай от 1 до 9'}
+        {command: '/values',description: 'Курсы валют'},
+        {command: '/converter', description: 'Конфертация валют'},
+        {command: '/dynamic',description: 'Динамика валюты'}
     ])
 
-    bot.on('message',async msg=>{
-        const text = msg.text;
-        const chatId =msg.chat.id;
-        const name = msg.chat.first_name;
+    axios
+        .get('https://www.cbr-xml-daily.ru/daily_json.js')
+        .then((response)=>{
+            currency = response.data.Valute;
+        })
+        .catch(error => {
+            console.log(error)
+        })
+
+    bot.on('message', msg=>{
+        let text = msg.text;
+        let chatId =msg.chat.id;
+        let name = msg.chat.first_name;
         if (text === '/start'){
-            await bot.sendSticker(chatId,'https://tlgrm.ru/_/stickers/ccd/a8d/ccda8d5d-d492-4393-8bb7-e33f77c24907/1.webp');
+            bot.sendSticker(chatId,'https://tlgrm.ru/_/stickers/ccd/a8d/ccda8d5d-d492-4393-8bb7-e33f77c24907/1.webp');
             return bot.sendMessage(chatId,`Привет, ${name}! Добро пожаловать в бот 2К!`);
         }
         if(text==='/info'){
-            return bot.sendMessage(chatId,'Ну тут пока ничего нет, но скоро все будет, отвечаю');
+            return bot.sendMessage(chatId,'Данный бот создан для получения актуальных данных об основных валютах, их конвертации и отслеживания динамики');
         }
-        if(text === '/slava_ukraine'){
-            await bot.sendSticker(chatId,'https://cdn.tlgrm.app/stickers/43e/041/43e041ad-afbb-34c9-8e62-222f29474c0e/256/1.webp');
-            return bot.sendMessage(chatId,'Z Z Z Z Z Героям сала Z Z Z Z Z');
-        }
-        if(text === '/game'){
+        if(text === '/values'){
             return startGame(chatId);
         }
-        return bot.sendMessage(chatId,'Я тебя не понимаю брат, попробуй еще раз ежжи');
+        if(text ==='/converter'){
+            bot.sendMessage(chatId,'Выберите конвертируемую валюту');
+            startGame(chatId);
+            let base = msg.data;
+            console.log(base);
+            bot.sendMessage(chatId,'Выберите валюту, в которую будем конвертировать');
+            startGame(chatId);
+            let con = msg.data;
+            console.log(currency[base].Name);
+            console.log(currency[con].Name);
+            //let ans = (getValue(currency[base]) / getNominal(currency[base]))/(getValue(currency[con]) / getNominal(currency[con]));
+            //return bot.sendMessage(chatId,`1 ${currency[base].Name} = ${ans} ${currency[con].Name}`);
+        }
+        if(text === '/dynamic'){
+
+        }
+        return bot.sendMessage(chatId,'Я тебя не понимаю, попробуй другую команду');
 
     });
+
     bot.on('callback_query',msg=>{
-        const data =msg.data;
-        const chatId=msg.message.chat.id;
+        let data =msg.data;
+        let chatId=msg.message.chat.id;
+        if(data==='/converter'){
+
+        }
         if(data==='/again'){
             return startGame(chatId);
-        }
-        if(data===chats[chatId]){
-            return bot.sendMessage(chatId,`ты угадал ${chats[chatId]}`,againOptions);
         }else{
-            return bot.sendMessage(chatId,`ты не угадал, я загадал цифру ${chats[chatId]}`,againOptions);
+            output(chatId,currency[msg.data]);
+            return bot.sendMessage(chatId,`Хотите получить данные по другой валюте?`,againOptions);
         }
     })
 }
-start()
+start();
+
