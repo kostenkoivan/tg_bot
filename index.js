@@ -1,13 +1,15 @@
 //https://www.cbr-xml-daily.ru/daily_json.js
 
+//"шапка" программы, загрузка необходимых для работы библиотек, занесение токена бота, описание глобальных переменных
 const TelegramApi = require('node-telegram-bot-api')
-const {valueOptions,againOptions}=require('./options')
+const {valueOptions,againOptions,firstCurrency,secondCurrency, dynamicCurrency}=require('./options')
 const axios = require("axios");
 const token ='5355793921:AAGVsXEBwOHtgkgs-7XQAnX5fDCY4KKFWYg'
 const  bot = new TelegramApi(token,{polling:true})
-const chats={}
 let currency = {}
 
+
+//функция вывода переменной-валюты
 function output(chatId,data){
     bot.sendMessage(chatId,`ID ${data.ID}\n
      Номерной код ${data.NumCode}\n
@@ -17,8 +19,26 @@ function output(chatId,data){
      Стоимоcть ${data.Value}\n
      Предыдущая стоимость ${data.Previous}`);
 }
-function getValue(data){
-    return data.Value;
+function output_dynamic(chatId,data){
+    if(getValue(data) - getPrevious(data) < 0) {
+        return bot.sendMessage(chatId,`Динамика валюты ${data.Name} отрицательная: ${(data.Value - data.Previous).toPrecision(4)}`) ;
+    }
+    else{
+        return bot.sendMessage(chatId,`Динамика валюты ${data.Name} положительная: +${(data.Value - data.Previous).toPrecision(4)}`) ;
+    }
+}
+function output_converted(chatId,firstData,secondData){
+
+    let ans = (firstData.Value / firstData.Nominal)/(secondData.Value/ secondData.Nominal);
+
+    return bot.sendMessage(chatId,`1 ${firstData.Name} = ${ans} ${secondData.Name}`)
+}
+//описание геттеров
+function getCode(data){
+    return data.NumCode;
+}
+function getCharCode(data){
+    return data.CharCode;
 }
 function getNominal(data){
     return data.Nominal;
@@ -26,19 +46,32 @@ function getNominal(data){
 function getName(data){
     return data.Name;
 }
-
-const startGame = async (chatId)=>{
+function getValue(data){
+    return data.Value;
+}
+function getPrevious(data){
+    return data.Previous;
+}
+const getValueInfo = async (chatId)=>{
     await bot.sendMessage(chatId,'Валюты',valueOptions);
 }
+const converter = async (chatId)=>{
+    await bot.sendMessage(chatId,'Конвертируемая валюта',firstCurrency);
+}
+const dynamic = async (chatId)=>{
+    await bot.sendMessage(chatId,'Валюты',dynamicCurrency);
+}
+//тело программы
 const start=()=>{
+    //меню, в котором содержаться все команды бота
     bot.setMyCommands([
         {command: '/start', description: 'Начальное приветствие'},
         {command: '/info',description: 'Информация о боте'},
         {command: '/values',description: 'Курсы валют'},
-        {command: '/converter', description: 'Конфертация валют'},
+        {command: '/converter', description: 'Конвертация валют'},
         {command: '/dynamic',description: 'Динамика валюты'}
     ])
-
+    //получение данных о валюте с официального сайта ЦБ РФ
     axios
         .get('https://www.cbr-xml-daily.ru/daily_json.js')
         .then((response)=>{
@@ -60,39 +93,39 @@ const start=()=>{
             return bot.sendMessage(chatId,'Данный бот создан для получения актуальных данных об основных валютах, их конвертации и отслеживания динамики');
         }
         if(text === '/values'){
-            return startGame(chatId);
+            return getValueInfo(chatId);
         }
         if(text ==='/converter'){
-            bot.sendMessage(chatId,'Выберите конвертируемую валюту');
-            startGame(chatId);
-            let base = msg.data;
-            console.log(base);
-            bot.sendMessage(chatId,'Выберите валюту, в которую будем конвертировать');
-            startGame(chatId);
-            let con = msg.data;
-            console.log(currency[base].Name);
-            console.log(currency[con].Name);
-            //let ans = (getValue(currency[base]) / getNominal(currency[base]))/(getValue(currency[con]) / getNominal(currency[con]));
-            //return bot.sendMessage(chatId,`1 ${currency[base].Name} = ${ans} ${currency[con].Name}`);
+            converter(chatId);
         }
         if(text === '/dynamic'){
-
+            return dynamic(chatId);
         }
-        return bot.sendMessage(chatId,'Я тебя не понимаю, попробуй другую команду');
-
     });
-
+    //очередь коллбеков
+    let first_c;
     bot.on('callback_query',msg=>{
-        let data =msg.data;
+        let data = msg.data;
         let chatId=msg.message.chat.id;
-        if(data==='/converter'){
-
+        if(data[3]==='d'){
+            let basa = data.slice(0,-1);
+            return output_dynamic(chatId,currency[basa]);
         }
-        if(data==='/again'){
-            return startGame(chatId);
+        if(data[3]==='f'){
+            let basa =data.slice(0,-1);
+            first_c = basa;
+            return bot.sendMessage(chatId,'Валюта, в которую конвертируем', secondCurrency)
+        }
+        if(data[3]==='s'){
+            let basa =data.slice(0,-1);
+            return output_converted(chatId,currency[first_c],currency[basa]);
         }else{
-            output(chatId,currency[msg.data]);
-            return bot.sendMessage(chatId,`Хотите получить данные по другой валюте?`,againOptions);
+            if(data==='/again'){
+                return getValueInfo(chatId);
+            }else{
+                output(chatId,currency[msg.data]);
+                return bot.sendMessage(chatId,`Хотите получить данные по другой валюте?`,againOptions);
+            }
         }
     })
 }
